@@ -1,96 +1,88 @@
-# Laptop Audio Share (Next.js + WebRTC + QR)
+# 📱 Phone Speaker
 
-Production-oriented web tool to stream laptop audio to phone speaker using browser WebRTC.
+Turn your **phone into a wireless speaker for your laptop** using only your browser.
 
-## Core Features
+**Phone Speaker** is a WebRTC-based web tool that streams audio from your laptop to your phone **in real time**, without installing any apps.
 
-- Laptop sender with tab/system audio capture.
-- Phone listener with QR pairing and low-latency playback.
-- Session-based signaling with Socket.IO.
-- SEO-ready marketing/content site for SaaS growth.
+The entire connection works **directly between devices** using modern browser technologies.
 
-## Pages
+---
 
-- `/` Home
-- `/tool` Tool launcher
-- `/share` Laptop sender
-- `/listen` Phone listener
-- `/how-it-works`
-- `/blog`
-- `/blog/[slug]`
-- `/use-phone-as-speaker`
-- `/laptop-sound-to-phone`
-- `/phone-wireless-speaker`
-- `/turn-phone-into-speaker`
-- `/about`
-- `/contact`
-- `/privacy-policy`
-- `/terms-and-conditions`
-- `/disclaimer`
-- `/cookie-policy`
+## 🚀 Features
 
-## SEO + Content
+- 🔊 Stream laptop audio directly to your phone
+- 🌐 Works entirely in the browser
+- ⚡ No installation required
+- 🎧 Real-time WebRTC audio streaming
+- 📱 QR code pairing for easy connection
+- 💻 Cross-platform support  
+  - Windows  
+  - Linux  
+  - macOS  
+  - Android  
 
-- Metadata with canonical, OpenGraph, Twitter cards.
-- JSON-LD schema for Organization, WebSite, FAQ, HowTo, Article, and Breadcrumb.
-- App Router `sitemap.xml` and `robots.txt` generation.
-- Keyword-targeted blog engine with long-form 1200-1500 word article templates.
-- 30 SEO topic ideas for editorial backlog.
+---
 
-## Ads + Analytics Readiness
+## ⚙️ How It Works
 
-- Reusable ad placeholder component (`AdSlot`) for future AdSense units.
-- Ad placeholders in header, in-article sections, sidebar, and footer banner.
-- Ads are intentionally excluded from live tool UI routes (`/share`, `/listen`).
-- Google Analytics hook via `NEXT_PUBLIC_GA_ID`.
-- Google AdSense script hook via `NEXT_PUBLIC_ADSENSE_ID`.
+1. Open the tool in your **laptop browser**
+2. Generate a **connection session**
+3. Scan the **QR code** using your phone
+4. WebRTC establishes a **peer-to-peer connection**
+5. Laptop audio streams directly to your **phone speaker**
 
-## Security + Abuse Controls
+Because **WebRTC creates a direct connection**, the audio **does not pass through any server**, ensuring low latency.
 
-- Room/session ID validation.
-- One sender per room policy.
-- Listener cap per room.
-- Per-socket signaling rate limits.
-- Stale room cleanup.
+---
 
-## Project Structure
+📡 Both devices must be connected to the same network (WiFi/LAN).
 
-- `src/app/*`: routes and SEO pages.
-- `src/components/*`: UI, layout, ads, schema helpers.
-- `src/content/blog-posts.ts`: blog content + keyword topics.
-- `src/lib/*`: site config and metadata builders.
-- `src/server/signaling.ts`: shared signaling contracts.
-- `server.js`: Next.js custom server + Socket.IO signaling and protections.
+At the moment, the peer-to-peer connection works only when the laptop and phone are on the same network.
+Support for cross-network connections may be added in future updates.
 
-## Local Development
+
+## 🛠 Tech Stack
+
+- **Next.js**
+- **TailwindCSS**
+- **shadcn/ui**
+- **Magic UI**
+- **Framer Motion**
+- **WebRTC**
+- **Web Audio API**
+
+---
+
+---
+
+## 🧑‍💻 Local Development
+
+### 1️⃣ Clone the repository
 
 ```bash
+git clone https://github.com/alokumar01/phone-speaker.git
+```
+### 2️⃣ Navigate to the project
+```
+cd laptop-to-phone-audio
+```
+### 3️⃣ Install dependencies
+```
 npm install
+```
+### 4️⃣ Run the development server
+```
 npm run dev
 ```
+### Open in browser:
 
-Open:
+http://localhost:3000
+🚀 Deployment
 
-- Sender: `http://localhost:3000/share`
-- Listener: `http://localhost:3000/listen?room=<id>`
-- Marketing site: `http://localhost:3000/`
 
-## Environment Variables
+👨‍💻 Author
 
-```bash
-NEXT_PUBLIC_SITE_URL=https://your-domain.com
-NEXT_PUBLIC_GA_ID=G-XXXXXXXXXX
-NEXT_PUBLIC_ADSENSE_ID=ca-pub-XXXXXXXXXXXXXXXX
-NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION=your_search_console_token
-HOST=0.0.0.0
-PORT=3000
-```
+Alok Kumar
 
-## Production
-
-```bash
-npm run build
-npm run start
-```
-
-Use HTTPS in production (required for media capture APIs outside localhost).
+GitHub:
+https://github.com/alokumar01
