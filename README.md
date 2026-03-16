@@ -1,36 +1,96 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Laptop Audio Share (Next.js + WebRTC + QR)
 
-## Getting Started
+Production-oriented web tool to stream laptop audio to phone speaker using browser WebRTC.
 
-First, run the development server:
+## Core Features
+
+- Laptop sender with tab/system audio capture.
+- Phone listener with QR pairing and low-latency playback.
+- Session-based signaling with Socket.IO.
+- SEO-ready marketing/content site for SaaS growth.
+
+## Pages
+
+- `/` Home
+- `/tool` Tool launcher
+- `/share` Laptop sender
+- `/listen` Phone listener
+- `/how-it-works`
+- `/blog`
+- `/blog/[slug]`
+- `/use-phone-as-speaker`
+- `/laptop-sound-to-phone`
+- `/phone-wireless-speaker`
+- `/turn-phone-into-speaker`
+- `/about`
+- `/contact`
+- `/privacy-policy`
+- `/terms-and-conditions`
+- `/disclaimer`
+- `/cookie-policy`
+
+## SEO + Content
+
+- Metadata with canonical, OpenGraph, Twitter cards.
+- JSON-LD schema for Organization, WebSite, FAQ, HowTo, Article, and Breadcrumb.
+- App Router `sitemap.xml` and `robots.txt` generation.
+- Keyword-targeted blog engine with long-form 1200-1500 word article templates.
+- 30 SEO topic ideas for editorial backlog.
+
+## Ads + Analytics Readiness
+
+- Reusable ad placeholder component (`AdSlot`) for future AdSense units.
+- Ad placeholders in header, in-article sections, sidebar, and footer banner.
+- Ads are intentionally excluded from live tool UI routes (`/share`, `/listen`).
+- Google Analytics hook via `NEXT_PUBLIC_GA_ID`.
+- Google AdSense script hook via `NEXT_PUBLIC_ADSENSE_ID`.
+
+## Security + Abuse Controls
+
+- Room/session ID validation.
+- One sender per room policy.
+- Listener cap per room.
+- Per-socket signaling rate limits.
+- Stale room cleanup.
+
+## Project Structure
+
+- `src/app/*`: routes and SEO pages.
+- `src/components/*`: UI, layout, ads, schema helpers.
+- `src/content/blog-posts.ts`: blog content + keyword topics.
+- `src/lib/*`: site config and metadata builders.
+- `src/server/signaling.ts`: shared signaling contracts.
+- `server.js`: Next.js custom server + Socket.IO signaling and protections.
+
+## Local Development
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- Sender: `http://localhost:3000/share`
+- Listener: `http://localhost:3000/listen?room=<id>`
+- Marketing site: `http://localhost:3000/`
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Environment Variables
 
-## Learn More
+```bash
+NEXT_PUBLIC_SITE_URL=https://your-domain.com
+NEXT_PUBLIC_GA_ID=G-XXXXXXXXXX
+NEXT_PUBLIC_ADSENSE_ID=ca-pub-XXXXXXXXXXXXXXXX
+NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION=your_search_console_token
+HOST=0.0.0.0
+PORT=3000
+```
 
-To learn more about Next.js, take a look at the following resources:
+## Production
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+npm run build
+npm run start
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Use HTTPS in production (required for media capture APIs outside localhost).
