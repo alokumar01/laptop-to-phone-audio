@@ -35,6 +35,12 @@ Because **WebRTC creates a direct connection**, the audio **does not pass throug
 
 ---
 
+📡 Both devices must be connected to the same network (WiFi/LAN).
+
+At the moment, the peer-to-peer connection works only when the laptop and phone are on the same network.
+Support for cross-network connections may be added in future updates.
+
+
 ## 🛠 Tech Stack
 
 - **Next.js**
@@ -58,7 +64,7 @@ git clone https://github.com/alokumar01/phone-speaker.git
 ```
 ### 2️⃣ Navigate to the project
 ```
-cd phone-speaker
+cd laptop-to-phone-audio
 ```
 ### 3️⃣ Install dependencies
 ```
