@@ -1,17 +1,21 @@
 import { publicEnv } from "@/lib/env";
 
 export const siteConfig = {
-  name: "Laptop Audio Share",
-  shortName: "Audio Share",
+  name: "Phone Speaker",
+  shortName: "Phone Speaker", 
   author: "Alok Kumar",
   github: "https://github.com/alokumar01",
   githubHandle: "alokumar01",
   description:
-    "Stream laptop audio to your phone in real time with secure WebRTC pairing and QR connect.",
+    "Turn your phone into a wireless speaker for your laptop. Stream audio instantly using WebRTC with no app required.",
   url: publicEnv.baseUrl,
-  ogImage: "/open-graph.png",
+  ogImage: `${publicEnv.baseUrl}/open-graph.png`,
   locale: "en_US",
   keywords: [
+    "phone speaker for laptop",
+    "use phone as laptop speaker",
+    "wireless speaker using phone",
+    "stream audio browser to phone",
     "use phone as speaker for laptop",
     "laptop sound to phone",
     "phone as wireless speaker",

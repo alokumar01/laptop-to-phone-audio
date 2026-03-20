@@ -10,9 +10,11 @@ function readEnv(...keys: string[]) {
   return undefined;
 }
 
+const DEFAULT_URL = "https://phonespeaker.vercel.app";
+
 export const publicEnv = {
   baseUrl: trimTrailingSlash(
-    readEnv("NEXT_PUBLIC_BASE_URL", "NEXT_PUBLIC_SITE_URL") || "https://laptop-audio-share.vercel.app"
+    readEnv("NEXT_PUBLIC_BASE_URL", "NEXT_PUBLIC_SITE_URL") || DEFAULT_URL
   ),
   googleAnalyticsId: readEnv("NEXT_PUBLIC_GOOGLE_ANALYTICS_ID", "NEXT_PUBLIC_GA_ID"),
   googleSiteVerification: readEnv("NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION"),
