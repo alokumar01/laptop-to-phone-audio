@@ -2,8 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [dev]
-    
+    branches: [main, dev]
+  pull_request:
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -14,9 +15,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm install
+          cache: npm
 
-      - run: npx tsc --noEmit
+      - run: npm ci
+
+      - run: npm run typecheck
 
       - run: npm run lint
 

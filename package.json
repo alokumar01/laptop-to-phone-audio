@@ -6,16 +6,19 @@
     "dev": "NODE_ENV=development node server.js",
     "build": "next build",
     "start": "NODE_ENV=production node server.js",
-    "lint": "eslint"
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@fontsource/inter": "^5.2.8",
     "framer-motion": "^12.36.0",
-    "next": "16.1.6",
+    "next": "^16.2.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-qr-code": "^2.0.18",
     "socket.io": "^4.8.3",
     "socket.io-client": "^4.8.3",
+    "socket.io-parser": "^4.2.6",
     "uuid": "^13.0.0"
   },
   "devDependencies": {
@@ -24,7 +27,8 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.1.6",
+    "eslint-config-next": "^16.2.0",
+    "flatted": "^3.4.2",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

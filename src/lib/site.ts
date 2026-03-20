@@ -1,3 +1,5 @@
+import { publicEnv } from "@/lib/env";
+
 export const siteConfig = {
   name: "Laptop Audio Share",
   shortName: "Audio Share",
@@ -6,8 +8,8 @@ export const siteConfig = {
   githubHandle: "alokumar01",
   description:
     "Stream laptop audio to your phone in real time with secure WebRTC pairing and QR connect.",
-  url: process.env.NEXT_PUBLIC_SITE_URL || "https://laptop-audio-share.vercel.app",
-  ogImage: "/og-image.svg",
+  url: publicEnv.baseUrl,
+  ogImage: "/open-graph.png",
   locale: "en_US",
   keywords: [
     "use phone as speaker for laptop",

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -20,7 +20,7 @@ import {
 const PLAYOUT_HINT_SEC = 0.01;
 export const dynamic = "force-dynamic";
 
-export default function ListenPage() {
+function ListenPageContent() {
   const searchParams = useSearchParams();
   const room = searchParams.get("room") || "";
   const roomMissing = !room;
@@ -435,5 +435,25 @@ export default function ListenPage() {
         </Button>
       </Dialog>
     </main>
+  );
+}
+
+export default function ListenPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="mx-auto grid min-h-screen w-full max-w-6xl gap-6 px-6 py-10">
+          <Card className="p-7">
+            <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">Phone Listener</p>
+            <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-50">Preparing listener session</h1>
+            <p className="mt-3 text-sm leading-7 text-slate-400">
+              Loading room details and connection controls.
+            </p>
+          </Card>
+        </main>
+      }
+    >
+      <ListenPageContent />
+    </Suspense>
   );
 }

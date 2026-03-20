@@ -55,6 +55,17 @@ export interface IceEvent {
   candidate: RTCIceCandidateInit;
 }
 
+const iceServers: RTCIceServer[] = [{ urls: publicEnv.stunUrl }];
+
+if (publicEnv.turnUrl && publicEnv.turnUsername && publicEnv.turnCredential) {
+  iceServers.push({
+    urls: publicEnv.turnUrl,
+    username: publicEnv.turnUsername,
+    credential: publicEnv.turnCredential,
+  });
+}
+
 export const RTC_CONFIGURATION: RTCConfiguration = {
-  iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+  iceServers,
 };
+import { publicEnv } from "@/lib/env";
