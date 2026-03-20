@@ -1,88 +1,106 @@
-# 📱 Phone Speaker
+# Laptop Audio Share
 
-Turn your **phone into a wireless speaker for your laptop** using only your browser.
+Stream laptop audio to a phone browser with WebRTC, QR-based pairing, and a production-ready Next.js marketing site.
 
-**Phone Speaker** is a WebRTC-based web tool that streams audio from your laptop to your phone **in real time**, without installing any apps.
+## Stack
 
-The entire connection works **directly between devices** using modern browser technologies.
+- Next.js 16 App Router
+- Tailwind CSS 4
+- Framer Motion
+- Socket.IO signaling
+- WebRTC audio streaming
 
----
-
-## 🚀 Features
-
-- 🔊 Stream laptop audio directly to your phone
-- 🌐 Works entirely in the browser
-- ⚡ No installation required
-- 🎧 Real-time WebRTC audio streaming
-- 📱 QR code pairing for easy connection
-- 💻 Cross-platform support  
-  - Windows  
-  - Linux  
-  - macOS  
-  - Android  
-
----
-
-## ⚙️ How It Works
-
-1. Open the tool in your **laptop browser**
-2. Generate a **connection session**
-3. Scan the **QR code** using your phone
-4. WebRTC establishes a **peer-to-peer connection**
-5. Laptop audio streams directly to your **phone speaker**
-
-Because **WebRTC creates a direct connection**, the audio **does not pass through any server**, ensuring low latency.
-
----
-
-📡 Both devices must be connected to the same network (WiFi/LAN).
-
-At the moment, the peer-to-peer connection works only when the laptop and phone are on the same network.
-Support for cross-network connections may be added in future updates.
-
-
-## 🛠 Tech Stack
-
-- **Next.js**
-- **TailwindCSS**
-- **shadcn/ui**
-- **Magic UI**
-- **Framer Motion**
-- **WebRTC**
-- **Web Audio API**
-
----
-
----
-
-## 🧑‍💻 Local Development
-
-### 1️⃣ Clone the repository
+## Local development
 
 ```bash
-git clone https://github.com/alokumar01/phone-speaker.git
-```
-### 2️⃣ Navigate to the project
-```
-cd laptop-to-phone-audio
-```
-### 3️⃣ Install dependencies
-```
 npm install
-```
-### 4️⃣ Run the development server
-```
+cp .env.example .env.local
 npm run dev
 ```
-### Open in browser:
 
-http://localhost:3000
-🚀 Deployment
+Open `http://localhost:3000`.
 
+## Environment variables
 
-👨‍💻 Author
+Public app/runtime configuration lives in `.env.local` for local development and in Vercel project settings for production.
 
-Alok Kumar
+```bash
+NEXT_PUBLIC_BASE_URL=https://your-domain.com
+NEXT_PUBLIC_SIGNALING_URL=https://signal.your-domain.com
+NEXT_PUBLIC_GOOGLE_ANALYTICS_ID=G-XXXXXXXXXX
+NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION=
+NEXT_PUBLIC_ADSENSE_CLIENT=ca-pub-XXXXXXXXXXXXXXXX
+NEXT_PUBLIC_ADSENSE_ENABLED=false
+NEXT_PUBLIC_STUN_URL=stun:stun.l.google.com:19302
+NEXT_PUBLIC_TURN_URL=
+NEXT_PUBLIC_TURN_USERNAME=
+NEXT_PUBLIC_TURN_CREDENTIAL=
+```
 
-GitHub:
-https://github.com/alokumar01
+Server runtime variables for the standalone signaling server:
+
+```bash
+HOST=0.0.0.0
+PORT=3000
+ALLOWED_DEV_ORIGINS=
+ALLOWED_SIGNALING_ORIGINS=https://your-domain.com
+```
+
+## CI
+
+The repository is configured to pass:
+
+- `npm install`
+- `npm run typecheck`
+- `npm run lint`
+- `npm run build`
+
+GitHub Actions runs the same checks on pushes to `main` and `dev`, plus pull requests.
+
+## Deployment architecture
+
+This repository contains two concerns:
+
+1. The Next.js web app
+2. A Socket.IO signaling server in `server.js`
+
+Important: Vercel can host the Next.js app, but it is not the right runtime for the long-lived Socket.IO server in `server.js`.
+
+Recommended production setup:
+
+1. Deploy the Next.js app to Vercel
+2. Deploy the signaling server to a Node host such as Railway, Render, Fly.io, or a VPS
+3. Set `NEXT_PUBLIC_SIGNALING_URL` in Vercel to the signaling server origin
+4. Set `ALLOWED_SIGNALING_ORIGINS` on the signaling server to the public app origin
+5. Add TURN credentials with the public TURN env vars for cross-network reliability
+
+For same-origin self-hosting on a VPS, you can still run:
+
+```bash
+npm run build
+npm run start
+```
+
+## SEO and ads
+
+The app includes:
+
+- route-level metadata
+- OpenGraph and Twitter cards
+- `sitemap.xml`
+- `robots.txt`
+- article, FAQ, and breadcrumb structured data
+- About, Contact, Privacy Policy, Terms, Disclaimer, and Cookie Policy pages
+
+AdSense components render only when enabled through environment variables and are intentionally excluded from the live sender/listener dashboards.
+
+## Notes on WebRTC
+
+- LAN works with STUN-only in favorable conditions
+- Cross-network use should add TURN
+- Browser screen capture requires localhost during local development or HTTPS in production
+
+## Author
+
+Built by Alok Kumar  
+GitHub: https://github.com/alokumar01

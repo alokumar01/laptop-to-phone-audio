@@ -37,6 +37,20 @@ const RATE_LIMITS = {
 const socketRateMap = new Map();
 const roomSessionMap = new Map();
 
+function normalizeOrigin(origin) {
+  return String(origin || "").trim().replace(/\/$/, "");
+}
+
+function getAllowedSignalOrigins() {
+  const rawOrigins = [
+    process.env.NEXT_PUBLIC_BASE_URL,
+    process.env.NEXT_PUBLIC_SITE_URL,
+    ...(process.env.ALLOWED_SIGNALING_ORIGINS?.split(",") ?? []),
+  ];
+
+  return new Set(rawOrigins.map(normalizeOrigin).filter(Boolean));
+}
+
 function getLanIPv4() {
   const interfaces = os.networkInterfaces();
   for (const entries of Object.values(interfaces)) {
@@ -135,10 +149,18 @@ app
       handle(req, res);
     });
 
+    const allowedOrigins = getAllowedSignalOrigins();
     const io = new Server(httpServer, {
       path: "/socket.io",
       cors: {
-        origin: true,
+        origin(origin, callback) {
+          if (dev || allowedOrigins.size === 0 || !origin) {
+            callback(null, true);
+            return;
+          }
+
+          callback(null, allowedOrigins.has(normalizeOrigin(origin)));
+        },
         credentials: true,
       },
     });

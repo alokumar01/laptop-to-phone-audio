@@ -18,6 +18,7 @@ export function buildMetadata({
 }: BuildMetadataInput): Metadata {
   const url = toAbsoluteUrl(path);
   const metadataTitle = `${title} | ${siteConfig.name}`;
+  const imageUrl = image.startsWith("http") ? image : toAbsoluteUrl(image);
 
   return {
     title: metadataTitle,
@@ -35,7 +36,7 @@ export function buildMetadata({
       siteName: siteConfig.name,
       images: [
         {
-          url: image,
+          url: imageUrl,
           width: 1200,
           height: 630,
           alt: metadataTitle,
@@ -46,7 +47,7 @@ export function buildMetadata({
       card: "summary_large_image",
       title: metadataTitle,
       description,
-      images: [image],
+      images: [imageUrl],
     },
   };
 }

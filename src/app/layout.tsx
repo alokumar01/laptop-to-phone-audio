@@ -1,16 +1,11 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import "@fontsource/inter/index.css";
 import Script from "next/script";
 import "./globals.css";
 import { AppShell } from "@/components/layout/AppShell";
 import { JsonLd } from "@/components/seo/JsonLd";
+import { publicEnv } from "@/lib/env";
 import { siteConfig } from "@/lib/site";
-
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter",
-  display: "swap",
-});
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteConfig.url),
@@ -32,7 +27,7 @@ export const metadata: Metadata = {
     description: siteConfig.description,
     images: [
       {
-        url: siteConfig.ogImage,
+        url: `${siteConfig.url}${siteConfig.ogImage}`,
         width: 1200,
         height: 630,
         alt: siteConfig.name,
@@ -43,10 +38,10 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: `${siteConfig.name} | Stream Laptop Audio To Phone`,
     description: siteConfig.description,
-    images: [siteConfig.ogImage],
+    images: [`${siteConfig.url}${siteConfig.ogImage}`],
   },
   verification: {
-    google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION,
+    google: publicEnv.googleSiteVerification,
   },
 };
 
@@ -55,15 +50,15 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const gaId = process.env.NEXT_PUBLIC_GA_ID;
-  const adsenseId = process.env.NEXT_PUBLIC_ADSENSE_ID;
+  const gaId = publicEnv.googleAnalyticsId;
+  const adsenseId = publicEnv.adsenseClient;
 
   const orgSchema = {
     "@context": "https://schema.org",
     "@type": "Organization",
     name: siteConfig.name,
     url: siteConfig.url,
-    sameAs: [],
+    sameAs: [siteConfig.github],
   };
 
   const websiteSchema = {
@@ -71,16 +66,11 @@ export default function RootLayout({
     "@type": "WebSite",
     name: siteConfig.name,
     url: siteConfig.url,
-    potentialAction: {
-      "@type": "SearchAction",
-      target: `${siteConfig.url}/blog?query={search_term_string}`,
-      "query-input": "required name=search_term_string",
-    },
   };
 
   return (
     <html lang="en">
-      <body className={`${inter.className} antialiased`}>
+      <body className="antialiased">
         <JsonLd data={orgSchema} />
         <JsonLd data={websiteSchema} />
         {gaId ? (

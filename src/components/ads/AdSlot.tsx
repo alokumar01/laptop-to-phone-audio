@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { publicEnv } from "@/lib/env";
 
 declare global {
   interface Window {
@@ -15,8 +16,8 @@ interface AdSlotProps {
   minHeight?: number;
 }
 
-const ADS_ENABLED = process.env.NEXT_PUBLIC_ADSENSE_ENABLED === "true";
-const ADS_CLIENT = process.env.NEXT_PUBLIC_ADSENSE_ID;
+const ADS_ENABLED = publicEnv.adsenseEnabled;
+const ADS_CLIENT = publicEnv.adsenseClient;
 
 export function AdSlot({ slot, className = "", format = "auto", minHeight = 180 }: AdSlotProps) {
   useEffect(() => {

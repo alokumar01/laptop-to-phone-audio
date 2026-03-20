@@ -49,6 +49,7 @@ export default async function BlogPostPage({ params }: PageProps) {
     "@type": "Article",
     headline: post.title,
     description: post.description,
+    image: toAbsoluteUrl(siteConfig.ogImage),
     datePublished: post.publishedAt,
     dateModified: post.updatedAt,
     author: {
