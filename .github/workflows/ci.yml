@@ -8,6 +8,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_BASE_URL: https://phonespeaker.vercel.app
+      NEXT_PUBLIC_SIGNALING_URL: https://signal.whoisalok.tech
 
     steps:
       - uses: actions/checkout@v4

@@ -2,14 +2,14 @@ import { publicEnv } from "@/lib/env";
 
 export const siteConfig = {
   name: "Phone Speaker",
-  shortName: "Phone Speaker", 
+  shortName: "Phone Speaker",
   author: "Alok Kumar",
   github: "https://github.com/alokumar01",
   githubHandle: "alokumar01",
   description:
     "Turn your phone into a wireless speaker for your laptop. Stream audio instantly using WebRTC with no app required.",
   url: publicEnv.baseUrl,
-  ogImage: `${publicEnv.baseUrl}/open-graph.png`,
+  ogImage: "/open-graph.png",
   locale: "en_US",
   keywords: [
     "phone speaker for laptop",
@@ -48,6 +48,9 @@ export const siteConfig = {
 };
 
 export function toAbsoluteUrl(path: string) {
+  if (path.startsWith("http://") || path.startsWith("https://")) {
+    return path;
+  }
   const cleanPath = path.startsWith("/") ? path : `/${path}`;
   return `${siteConfig.url}${cleanPath}`;
 }

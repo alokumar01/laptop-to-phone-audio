@@ -8,64 +8,81 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { MetricCard } from "@/components/ui/metric-card";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { closeSocket, getSocket } from "@/lib/socket";
+import { publicEnv } from "@/lib/env";
+import { closeSocket, getSocket, waitForSocketConnection } from "@/lib/socket";
 import {
   RTC_CONFIGURATION,
   SIGNALING_EVENTS,
-  type IceEvent,
-  type OfferEvent,
-  type PeerInfo,
-} from "@/server/signaling";
+  type ConnectionState,
+  type SignalEvent,
+  type UserJoinedEvent,
+} from "@/lib/signaling";
 
 const PLAYOUT_HINT_SEC = 0.01;
+const SIGNALING_LABELS: Record<ConnectionState, string> = {
+  idle: "Idle",
+  connecting: "Connecting...",
+  connected: "Connected",
+  reconnecting: "Reconnecting...",
+  failed: "Connection failed",
+  disconnected: "Disconnected",
+};
+
 export const dynamic = "force-dynamic";
 
 function ListenPageContent() {
+  const signalingHost = useMemo(() => new URL(publicEnv.signalingUrl).host, []);
   const searchParams = useSearchParams();
   const room = searchParams.get("room") || "";
   const roomMissing = !room;
 
-  const [status, setStatus] = useState("Open this page from QR, then tap Start Listening.");
+  const [status, setStatus] = useState("Connecting to signaling server...");
   const [connected, setConnected] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [hasJoinedRoom, setHasJoinedRoom] = useState(false);
   const [needsUserPlay, setNeedsUserPlay] = useState(false);
   const [volume, setVolume] = useState(1);
+  const [signalingState, setSignalingState] = useState<ConnectionState>("connecting");
+  const [connectionError, setConnectionError] = useState("");
+  const [reconnectCount, setReconnectCount] = useState(0);
   const [errorOpen, setErrorOpen] = useState(false);
   const [errorText, setErrorText] = useState("");
 
   const socket = useMemo(() => getSocket(), []);
-
   const roomRef = useRef(room);
   const senderIdRef = useRef<string | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
   const audioElRef = useRef<HTMLAudioElement | null>(null);
 
-  const requestOfferNudge = useCallback(() => {
+  const joinRoom = useCallback(() => {
     if (!roomRef.current) return;
-    socket.emit(SIGNALING_EVENTS.requestOffer, { room: roomRef.current });
+    socket.emit(SIGNALING_EVENTS.join, { room: roomRef.current, role: "listener" });
+    setHasJoinedRoom(true);
   }, [socket]);
 
-  const playIncomingStream = useCallback(async (stream: MediaStream) => {
-    const audioEl = audioElRef.current;
-    if (!audioEl) return;
+  const playIncomingStream = useCallback(
+    async (stream: MediaStream) => {
+      const audioEl = audioElRef.current;
+      if (!audioEl) return;
 
-    if (audioEl.srcObject !== stream) {
-      audioEl.srcObject = stream;
-    }
+      if (audioEl.srcObject !== stream) {
+        audioEl.srcObject = stream;
+      }
 
-    audioEl.volume = volume;
+      audioEl.volume = volume;
 
-    try {
-      await audioEl.play();
-      setNeedsUserPlay(false);
-      setStatus("Streaming live audio");
-    } catch {
-      setNeedsUserPlay(true);
-      setStatus("Audio received. Tap play in audio control below.");
-    }
-  }, [volume]);
+      try {
+        await audioEl.play();
+        setNeedsUserPlay(false);
+        setStatus("Streaming live audio");
+      } catch {
+        setNeedsUserPlay(true);
+        setStatus("Audio received. Tap resume playback below.");
+      }
+    },
+    [volume]
+  );
 
   const cleanupConnection = useCallback(() => {
     if (pcRef.current) {
@@ -87,17 +104,6 @@ function ListenPageContent() {
     }
   }, []);
 
-  const emitJoinRoom = useCallback(() => {
-    if (!roomRef.current) return;
-    socket.emit(SIGNALING_EVENTS.join, { room: roomRef.current, role: "listener" }, (response?: { ok?: boolean }) => {
-      if (response?.ok) {
-        setHasJoinedRoom(true);
-        setStatus("Connected to signaling. Waiting for laptop offer...");
-        requestOfferNudge();
-      }
-    });
-  }, [requestOfferNudge, socket]);
-
   const getOrCreatePeerConnection = useCallback(async () => {
     if (pcRef.current) return pcRef.current;
 
@@ -106,11 +112,13 @@ function ListenPageContent() {
 
     pc.onicecandidate = (event) => {
       if (!event.candidate || !senderIdRef.current) return;
-      socket.emit(SIGNALING_EVENTS.ice, {
+      socket.emit(SIGNALING_EVENTS.signal, {
         room: roomRef.current,
         to: senderIdRef.current,
-        candidate: event.candidate,
-      });
+        role: "listener",
+        type: "ice",
+        payload: event.candidate.toJSON(),
+      } satisfies SignalEvent<RTCIceCandidateInit>);
     };
 
     pc.ontrack = async (event) => {
@@ -125,10 +133,10 @@ function ListenPageContent() {
     };
 
     pc.onconnectionstatechange = () => {
-      const s = pc.connectionState;
-      if (s === "connected") {
+      const state = pc.connectionState;
+      if (state === "connected") {
         setConnected(true);
-      } else if (s === "failed" || s === "disconnected" || s === "closed") {
+      } else if (state === "failed" || state === "disconnected" || state === "closed") {
         setConnected(false);
       }
     };
@@ -136,19 +144,38 @@ function ListenPageContent() {
     return pc;
   }, [playIncomingStream, socket]);
 
-  const handleStartListening = useCallback(() => {
+  const ensureSignalingReady = useCallback(async () => {
+    setSignalingState((prev) => (prev === "reconnecting" ? prev : "connecting"));
+    setConnectionError("");
+    await waitForSocketConnection(socket);
+    setSignalingState("connected");
+    joinRoom();
+  }, [joinRoom, socket]);
+
+  const handleRetryConnection = useCallback(() => {
+    setConnectionError("");
+    setSignalingState("connecting");
+    setStatus("Connecting to signaling server...");
+    socket.connect();
+  }, [socket]);
+
+  const handleStartListening = useCallback(async () => {
     if (!roomRef.current) {
-      setStatus("No room found. Scan QR from laptop share page.");
+      setStatus("No room found. Scan QR from the sender page.");
       return;
     }
 
-    setIsListening(true);
-    setHasJoinedRoom(false);
-    setStatus("Joining room...");
-    if (socket.connected) {
-      emitJoinRoom();
+    try {
+      setIsListening(true);
+      setStatus("Connecting...");
+      await ensureSignalingReady();
+      setStatus("Connected to signaling. Waiting for laptop sender...");
+    } catch (err) {
+      setConnectionError(String((err as Error)?.message || err));
+      setSignalingState("failed");
+      setStatus("Connection failed. Retry signaling and start again.");
     }
-  }, [emitJoinRoom, socket]);
+  }, [ensureSignalingReady]);
 
   const handleStopListening = useCallback(() => {
     setIsListening(false);
@@ -166,7 +193,7 @@ function ListenPageContent() {
       setNeedsUserPlay(false);
       setStatus("Streaming live audio");
     } catch (err) {
-      setErrorText(String((err as Error).message || err));
+      setErrorText(String((err as Error)?.message || err));
       setErrorOpen(true);
     }
   }, []);
@@ -184,123 +211,111 @@ function ListenPageContent() {
 
   useEffect(() => {
     const handleConnect = () => {
+      setReconnectCount(0);
+      setSignalingState("connected");
+      setConnectionError("");
       if (isListening && roomRef.current) {
-        emitJoinRoom();
+        joinRoom();
+        setStatus("Connected to signaling. Waiting for laptop sender...");
+      } else {
+        setStatus("Connected to signaling. Tap Start Listening when ready.");
       }
     };
 
-    const handleDisconnect = () => {
+    const handleConnectError = (err: Error) => {
+      setSignalingState("failed");
+      setConnectionError(err.message || "Unable to reach signaling server.");
+      setStatus("Connection failed. Check the signaling server and retry.");
+    };
+
+    const handleDisconnect = (reason: string) => {
       setHasJoinedRoom(false);
       setConnected(false);
+      setSignalingState(reason === "io client disconnect" ? "idle" : "disconnected");
+      setStatus("Signaling disconnected. Waiting for reconnect or manual retry.");
     };
 
-    const handlePeers = (peers: PeerInfo[]) => {
-      setHasJoinedRoom(true);
-      setStatus("Connected to signaling. Waiting for laptop offer...");
-      const sender = peers.find((peer) => peer.role === "sender");
-      if (sender) {
-        senderIdRef.current = sender.id;
-        setStatus("Sender detected. Negotiating audio session...");
-        requestOfferNudge();
-      }
+    const handleReconnectAttempt = (attempt: number) => {
+      setReconnectCount(attempt);
+      setSignalingState("reconnecting");
+      setStatus(`Reconnecting to signaling server... attempt ${attempt}`);
     };
 
-    const handlePeerJoined = (peer: PeerInfo) => {
-      if (peer.role === "sender") {
+    const handleUserJoined = (peer: UserJoinedEvent) => {
+      if (!peer.id || peer.id === socket.id) return;
+      if (!senderIdRef.current && peer.role !== "listener") {
         senderIdRef.current = peer.id;
-        setStatus("Laptop sender joined. Waiting for offer...");
-        requestOfferNudge();
+        setStatus("Sender detected. Waiting for offer...");
       }
     };
 
-    const handlePeerLeft = ({ id }: { id: string }) => {
-      if (senderIdRef.current === id) {
-        senderIdRef.current = null;
-        setConnected(false);
-        setStatus("Sender disconnected. Waiting for reconnect...");
+    const handleSignal = async (event: SignalEvent) => {
+      if (!isListening || !event.payload) return;
+
+      if (event.from) {
+        senderIdRef.current = event.from;
       }
-    };
 
-    const handleOffer = async ({ from, offer }: OfferEvent) => {
-      if (!isListening) return;
+      if (event.type === "offer") {
+        const pc = await getOrCreatePeerConnection();
+        await pc.setRemoteDescription(event.payload as RTCSessionDescriptionInit);
 
-      senderIdRef.current = from;
-      const pc = await getOrCreatePeerConnection();
+        for (const candidate of pendingCandidatesRef.current) {
+          await pc.addIceCandidate(candidate);
+        }
+        pendingCandidatesRef.current = [];
 
-      await pc.setRemoteDescription(offer);
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        if (!pc.localDescription) {
+          throw new Error("Listener answer could not be created.");
+        }
 
-      for (const candidate of pendingCandidatesRef.current) {
-        await pc.addIceCandidate(candidate);
+        socket.emit(SIGNALING_EVENTS.signal, {
+          room: roomRef.current,
+          to: senderIdRef.current ?? undefined,
+          role: "listener",
+          type: "answer",
+          payload: pc.localDescription,
+        } satisfies SignalEvent<RTCSessionDescriptionInit>);
+
+        setStatus("Offer accepted. Starting audio...");
       }
-      pendingCandidatesRef.current = [];
 
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-
-      socket.emit(SIGNALING_EVENTS.answer, {
-        room: roomRef.current,
-        to: from,
-        answer: pc.localDescription,
-      });
-
-      setStatus("Offer accepted. Starting audio...");
-    };
-
-    const handleIce = async ({ from, candidate }: IceEvent) => {
-      if (!isListening) return;
-      if (senderIdRef.current && senderIdRef.current !== from) return;
-      if (!candidate) return;
-
-      const pc = await getOrCreatePeerConnection();
-      if (pc.remoteDescription) {
-        await pc.addIceCandidate(candidate);
-      } else {
-        pendingCandidatesRef.current.push(candidate);
+      if (event.type === "ice") {
+        const candidate = event.payload as RTCIceCandidateInit;
+        const pc = await getOrCreatePeerConnection();
+        if (pc.remoteDescription) {
+          await pc.addIceCandidate(candidate);
+        } else {
+          pendingCandidatesRef.current.push(candidate);
+        }
       }
     };
 
     socket.on("connect", handleConnect);
+    socket.on("connect_error", handleConnectError);
     socket.on("disconnect", handleDisconnect);
-    socket.on(SIGNALING_EVENTS.peers, handlePeers);
-    socket.on(SIGNALING_EVENTS.peerJoined, handlePeerJoined);
-    socket.on(SIGNALING_EVENTS.peerLeft, handlePeerLeft);
-    socket.on(SIGNALING_EVENTS.offer, (payload: OfferEvent) => {
-      handleOffer(payload).catch((err) => {
-        setErrorText(String(err?.message || err));
+    socket.on(SIGNALING_EVENTS.userJoined, handleUserJoined);
+    socket.on(SIGNALING_EVENTS.signal, (event: SignalEvent) => {
+      handleSignal(event).catch((err) => {
+        setErrorText(String((err as Error)?.message || err));
         setErrorOpen(true);
       });
     });
-    socket.on(SIGNALING_EVENTS.ice, (payload: IceEvent) => {
-      handleIce(payload).catch((err) => {
-        setErrorText(String(err?.message || err));
-        setErrorOpen(true);
-      });
-    });
+    socket.io.on("reconnect_attempt", handleReconnectAttempt);
+
+    socket.connect();
 
     return () => {
       socket.off("connect", handleConnect);
+      socket.off("connect_error", handleConnectError);
       socket.off("disconnect", handleDisconnect);
-      socket.off(SIGNALING_EVENTS.peers, handlePeers);
-      socket.off(SIGNALING_EVENTS.peerJoined, handlePeerJoined);
-      socket.off(SIGNALING_EVENTS.peerLeft, handlePeerLeft);
-      socket.off(SIGNALING_EVENTS.offer);
-      socket.off(SIGNALING_EVENTS.ice);
+      socket.off(SIGNALING_EVENTS.userJoined, handleUserJoined);
+      socket.off(SIGNALING_EVENTS.signal);
+      socket.io.off("reconnect_attempt", handleReconnectAttempt);
     };
-  }, [emitJoinRoom, getOrCreatePeerConnection, isListening, requestOfferNudge, socket]);
-
-  useEffect(() => {
-    if (isListening && socket.connected && roomRef.current) {
-      emitJoinRoom();
-    }
-  }, [emitJoinRoom, isListening, socket]);
-
-  useEffect(() => {
-    if (!isListening || connected || !hasJoinedRoom || !socket.connected) return;
-    const interval = setInterval(() => {
-      requestOfferNudge();
-    }, 2000);
-    return () => clearInterval(interval);
-  }, [connected, hasJoinedRoom, isListening, requestOfferNudge, socket]);
+  }, [getOrCreatePeerConnection, isListening, joinRoom, socket]);
 
   useEffect(() => {
     return () => {
@@ -321,8 +336,9 @@ function ListenPageContent() {
                 <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-400">
                   {roomMissing ? "No room found. Scan the QR from your laptop sender screen." : status}
                 </p>
+                {connectionError ? <p className="mt-2 text-sm text-amber-300">{connectionError}</p> : null}
               </div>
-              <StatusBadge active={connected} activeLabel="Connected" idleLabel="Standby" />
+              <StatusBadge active={connected || signalingState === "connected"} activeLabel="Connected" idleLabel="Standby" />
             </div>
 
             <div className="mt-5 rounded-2xl border border-slate-800 bg-white/[0.03] px-4 py-3 text-sm text-slate-300">
@@ -330,12 +346,17 @@ function ListenPageContent() {
             </div>
 
             <div className="mt-6 flex flex-wrap gap-3">
-              <Button onClick={handleStartListening} disabled={roomMissing || isListening}>
-                Start Listening
+              <Button onClick={() => void handleStartListening()} disabled={roomMissing || isListening || signalingState === "connecting"}>
+                {signalingState === "connecting" ? "Connecting..." : "Start Listening"}
               </Button>
               <Button variant="secondary" onClick={handleStopListening} disabled={!isListening}>
                 Stop
               </Button>
+              {(signalingState === "failed" || signalingState === "disconnected") && (
+                <Button variant="secondary" onClick={handleRetryConnection}>
+                  Retry Connection
+                </Button>
+              )}
               <Link href="/tool">
                 <Button variant="ghost">Back to Tool</Button>
               </Link>
@@ -343,25 +364,25 @@ function ListenPageContent() {
           </Card>
 
           <div className="grid gap-4 md:grid-cols-4">
-            <MetricCard
-              label="Session"
-              value={room ? room.slice(0, 8) : "--"}
-              hint="Current room ID"
-              status="active"
-            />
+            <MetricCard label="Session" value={room ? room.slice(0, 8) : "--"} hint="Current room ID" status="active" />
             <MetricCard
               label="Signaling"
-              value={hasJoinedRoom ? "Joined" : "Waiting"}
-              hint="Socket room state"
-              status={hasJoinedRoom ? "good" : "default"}
+              value={SIGNALING_LABELS[signalingState]}
+              hint={hasJoinedRoom ? "Joined room on AWS signaling" : "Awaiting room join"}
+              status={signalingState === "connected" ? "good" : signalingState === "failed" ? "default" : "active"}
             />
             <MetricCard
               label="WebRTC"
-              value={connected ? "Live" : "Negotiating"}
+              value={connected ? "Live" : "Waiting"}
               hint="Peer media state"
               status={connected ? "good" : "active"}
             />
-            <MetricCard label="Latency" value={`${(PLAYOUT_HINT_SEC * 1000).toFixed(0)}ms`} hint="Playout target" status="active" />
+            <MetricCard
+              label="Reconnects"
+              value={String(reconnectCount)}
+              hint="Socket recovery attempts"
+              status={reconnectCount > 0 ? "active" : "default"}
+            />
           </div>
 
           <Card className="p-7">
@@ -397,8 +418,9 @@ function ListenPageContent() {
             <h2 className="mt-2 text-2xl font-semibold text-slate-50">Session health</h2>
             <div className="mt-5 grid gap-3">
               {[
-                ["Socket room", hasJoinedRoom ? "joined" : "not joined"],
-                ["WebRTC", connected ? "connected" : "negotiating"],
+                ["Socket", SIGNALING_LABELS[signalingState]],
+                ["Room", hasJoinedRoom ? "joined" : "waiting"],
+                ["WebRTC", connected ? "connected" : "waiting for media"],
                 ["Playback", needsUserPlay ? "awaiting resume" : "ready"],
                 ["Latency hint", `${(PLAYOUT_HINT_SEC * 1000).toFixed(0)}ms`],
               ].map(([label, value]) => (
@@ -416,9 +438,11 @@ function ListenPageContent() {
           <Card className="p-6">
             <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">Listener Notes</p>
             <div className="mt-3 grid gap-3 text-sm leading-7 text-slate-400">
-              <p>Start listening only after the laptop sender has joined the room.</p>
+              <p>
+                Signaling is handled by <code>{signalingHost}</code> over secure WebSocket transport.
+              </p>
+              <p>Start listening after the laptop sender is open on the same room link.</p>
               <p>If audio is silent on mobile, use the resume button once to satisfy autoplay rules.</p>
-              <p>Keep the screen awake while testing connection stability on mobile browsers.</p>
             </div>
           </Card>
         </div>

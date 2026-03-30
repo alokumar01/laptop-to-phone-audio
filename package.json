@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "NODE_ENV=development node server.js",
+    "dev": "next dev --turbopack",
     "build": "next build",
-    "start": "NODE_ENV=production node server.js",
+    "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit"
   },
@@ -16,9 +16,7 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-qr-code": "^2.0.18",
-    "socket.io": "^4.8.3",
     "socket.io-client": "^4.8.3",
-    "socket.io-parser": "^4.2.6",
     "uuid": "^13.0.0"
   },
   "devDependencies": {
@@ -31,5 +29,20 @@
     "flatted": "^3.4.2",
     "tailwindcss": "^4",
     "typescript": "^5"
+  },
+  "overrides": {
+    "eslint": {
+      "minimatch": {
+        "brace-expansion": "1.1.13"
+      }
+    },
+    "fast-glob": {
+      "micromatch": {
+        "picomatch": "2.3.2"
+      }
+    },
+    "tinyglobby": {
+      "picomatch": "4.0.4"
+    }
   }
 }
