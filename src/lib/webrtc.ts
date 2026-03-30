@@ -16,9 +16,26 @@ function getDisplayMediaFn() {
 
 function getCaptureUnavailableMessage() {
   if (!window.isSecureContext) {
-    return "Screen/audio capture is unavailable here. Open sender on http://localhost:3000/share or HTTPS.";
+    return "Screen/audio capture needs HTTPS or localhost. Open the sender on a secure origin.";
   }
   return "Screen/audio capture is unavailable in this browser. Use latest Chrome or Edge on laptop.";
+}
+
+function toCaptureError(err: unknown) {
+  const error = err as Error & { name?: string };
+
+  switch (error.name) {
+    case "NotAllowedError":
+      return new Error("Screen sharing was blocked. Allow capture and enable tab audio while sharing.");
+    case "NotFoundError":
+      return new Error("No shareable tab, window, or screen source was found.");
+    case "OverconstrainedError":
+      return new Error("Requested audio capture settings are not supported on this browser.");
+    case "AbortError":
+      return new Error("Screen sharing was cancelled before capture started.");
+    default:
+      return new Error(error.message || "Unable to start screen and audio capture.");
+  }
 }
 
 export async function captureDisplayAudio(): Promise<MediaStream> {
@@ -44,14 +61,18 @@ export async function captureDisplayAudio(): Promise<MediaStream> {
     });
   } catch (err) {
     if ((err as Error).name === "TypeError" || (err as Error).name === "OverconstrainedError") {
-      stream = await capture({ video: true, audio: true });
+      try {
+        stream = await capture({ video: true, audio: true });
+      } catch (fallbackErr) {
+        throw toCaptureError(fallbackErr);
+      }
     } else {
-      throw err;
+      throw toCaptureError(err);
     }
   }
 
   if (!stream.getAudioTracks().length) {
-    throw new Error("No audio track found. In Chrome tab picker, enable 'Share tab audio'.");
+    throw new Error("Enable tab audio while sharing.");
   }
 
   for (const track of stream.getVideoTracks()) {

@@ -21,7 +21,7 @@ const howFaq = [
   },
   {
     question: "Why is HTTPS required in production?",
-    answer: "Capture APIs like getDisplayMedia need secure context outside localhost.",
+    answer: "Capture APIs like getDisplayMedia need a secure context in production.",
   },
   {
     question: "What if direct connection fails?",
@@ -84,7 +84,7 @@ export default function HowItWorksPage() {
               <p className="rounded-2xl border border-indigo-400/20 bg-indigo-500/10 p-3">Laptop Browser (Sender)</p>
               <p className="text-center text-indigo-200">WebRTC Audio Media</p>
               <p className="rounded-2xl border border-indigo-400/20 bg-indigo-500/10 p-3">Phone Browser (Listener)</p>
-              <p className="text-center text-slate-400">WebSocket Signaling via Next.js Server</p>
+              <p className="text-center text-slate-400">WebSocket Signaling via AWS EC2</p>
             </div>
             <div>
               <Link href="/tool">

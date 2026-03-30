@@ -9,81 +9,88 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { MetricCard } from "@/components/ui/metric-card";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { getSocket, closeSocket } from "@/lib/socket";
+import { publicEnv } from "@/lib/env";
+import { closeSocket, getSocket, waitForSocketConnection } from "@/lib/socket";
+import {
+  RTC_CONFIGURATION,
+  SIGNALING_EVENTS,
+  type ConnectionState,
+  type PeerRole,
+  type SignalEvent,
+  type UserJoinedEvent,
+} from "@/lib/signaling";
 import { captureDisplayAudio, forceLowLatencyOpus } from "@/lib/webrtc";
-import { RTC_CONFIGURATION, SIGNALING_EVENTS, type AnswerEvent, type IceEvent, type PeerInfo, type PeerRole } from "@/server/signaling";
 
 export const dynamic = "force-dynamic";
 
+const SIGNALING_LABELS: Record<ConnectionState, string> = {
+  idle: "Idle",
+  connecting: "Connecting...",
+  connected: "Connected",
+  reconnecting: "Reconnecting...",
+  failed: "Connection failed",
+  disconnected: "Disconnected",
+};
+
 export default function SharePage() {
-  const [roomId] = useState(() => uuidv4());
-  const [receiverOrigin, setReceiverOrigin] = useState(() =>
-    typeof window !== "undefined" ? window.location.origin : ""
-  );
-  const [status, setStatus] = useState("Session created. Start broadcast and scan QR from phone.");
+  const signalingHost = useMemo(() => new URL(publicEnv.signalingUrl).host, []);
+  const [roomId, setRoomId] = useState("");
+  const [status, setStatus] = useState("Connecting to signaling server...");
   const [hasJoinedRoom, setHasJoinedRoom] = useState(false);
   const [activeListeners, setActiveListeners] = useState<string[]>([]);
   const [isBroadcasting, setIsBroadcasting] = useState(false);
+  const [signalingState, setSignalingState] = useState<ConnectionState>("connecting");
+  const [connectionError, setConnectionError] = useState("");
+  const [reconnectCount, setReconnectCount] = useState(0);
   const [errorOpen, setErrorOpen] = useState(false);
   const [errorText, setErrorText] = useState("");
 
   const streamRef = useRef<MediaStream | null>(null);
-  const roomRef = useRef(roomId);
+  const roomRef = useRef("");
   const peerConnectionsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const pendingRemoteCandidatesRef = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
-  const peerRolesRef = useRef<Map<string, PeerRole>>(new Map());
-
   const socket = useMemo(() => getSocket(), []);
-  const pairUrl = useMemo(
-    () => (receiverOrigin ? `${receiverOrigin}/listen?room=${roomId}` : ""),
-    [receiverOrigin, roomId]
-  );
+  const pairUrl = useMemo(() => `${publicEnv.baseUrl}/listen?room=${roomId}`, [roomId]);
 
-  const joinRoomWithAck = useCallback(async () => {
-    if (!socket.connected) return false;
+  useEffect(() => {
+    // The sender room ID must be generated only on the client to avoid SSR/client mismatches.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setRoomId(uuidv4());
+  }, []);
 
-    const ok = await new Promise<boolean>((resolve) => {
-      socket.emit(SIGNALING_EVENTS.join, { room: roomId, role: "sender" }, (response?: { ok?: boolean }) => {
-        resolve(Boolean(response?.ok));
-      });
-    });
+  const addListener = useCallback((peerId: string) => {
+    if (!peerId) return;
+    setActiveListeners((prev) => (prev.includes(peerId) ? prev : [...prev, peerId]));
+  }, []);
 
-    setHasJoinedRoom(ok);
-    return ok;
-  }, [roomId, socket]);
-
-  const ensureSenderJoined = useCallback(
-    async (maxAttempts = 4) => {
-      for (let i = 0; i < maxAttempts; i += 1) {
-        if (!socket.connected) {
-          socket.connect();
-          await new Promise((resolve) => setTimeout(resolve, 250));
-          continue;
-        }
-
-        const ok = await joinRoomWithAck();
-        if (ok) return true;
-        await new Promise((resolve) => setTimeout(resolve, 250));
-      }
-      return false;
-    },
-    [joinRoomWithAck, socket]
-  );
-
-  const emitJoinRoom = useCallback(() => {
-    ensureSenderJoined().catch(() => undefined);
-  }, [ensureSenderJoined]);
-
-  const closePeer = useCallback((peerId: string) => {
-    const pc = peerConnectionsRef.current.get(peerId);
-    if (!pc) return;
-    pc.onicecandidate = null;
-    pc.ontrack = null;
-    pc.onconnectionstatechange = null;
-    pc.close();
-    peerConnectionsRef.current.delete(peerId);
+  const removeListener = useCallback((peerId: string) => {
+    setActiveListeners((prev) => prev.filter((id) => id !== peerId));
     pendingRemoteCandidatesRef.current.delete(peerId);
   }, []);
+
+  const joinRoom = useCallback(() => {
+    if (!roomId) return;
+    roomRef.current = roomId;
+    socket.emit(SIGNALING_EVENTS.join, {
+      room: roomId,
+      role: "sender" satisfies PeerRole,
+    });
+    setHasJoinedRoom(true);
+  }, [roomId, socket]);
+
+  const closePeer = useCallback(
+    (peerId: string) => {
+      const pc = peerConnectionsRef.current.get(peerId);
+      if (!pc) return;
+      pc.onicecandidate = null;
+      pc.ontrack = null;
+      pc.onconnectionstatechange = null;
+      pc.close();
+      peerConnectionsRef.current.delete(peerId);
+      removeListener(peerId);
+    },
+    [removeListener]
+  );
 
   const stopBroadcast = useCallback(() => {
     for (const peerId of peerConnectionsRef.current.keys()) {
@@ -91,23 +98,31 @@ export default function SharePage() {
     }
 
     if (streamRef.current) {
-      for (const track of streamRef.current.getTracks()) track.stop();
+      for (const track of streamRef.current.getTracks()) {
+        track.stop();
+      }
       streamRef.current = null;
     }
 
     setIsBroadcasting(false);
-    setStatus("Broadcast stopped. Ready to restart.");
-  }, [closePeer]);
+    setStatus(
+      signalingState === "connected"
+        ? "Broadcast stopped. Signaling is still connected."
+        : "Broadcast stopped. Reconnect signaling before broadcasting again."
+    );
+  }, [closePeer, signalingState]);
 
   const tuneSender = useCallback(async (sender: RTCRtpSender) => {
     if (!sender.getParameters || !sender.setParameters) return;
     const params = sender.getParameters();
-    if (!params.encodings || !params.encodings.length) params.encodings = [{}];
+    if (!params.encodings || !params.encodings.length) {
+      params.encodings = [{}];
+    }
     params.encodings[0].maxBitrate = 128000;
     try {
       await sender.setParameters(params);
     } catch {
-      // Browser might block dynamic changes for this track.
+      // Browsers may reject dynamic sender tuning depending on capture source.
     }
   }, []);
 
@@ -119,190 +134,171 @@ export default function SharePage() {
       if (!pc) {
         pc = new RTCPeerConnection(RTC_CONFIGURATION);
         peerConnectionsRef.current.set(peerId, pc);
-        const createdPc = pc;
+        const currentPc = pc;
 
         for (const track of streamRef.current.getAudioTracks()) {
-          const sender = createdPc.addTrack(track, streamRef.current);
+          const sender = currentPc.addTrack(track, streamRef.current);
           await tuneSender(sender);
         }
 
-        createdPc.onicecandidate = (event) => {
+        currentPc.onicecandidate = (event) => {
           if (!event.candidate) return;
-          socket.emit(SIGNALING_EVENTS.ice, {
+          socket.emit(SIGNALING_EVENTS.signal, {
             room: roomRef.current,
             to: peerId,
-            candidate: event.candidate,
-          });
+            role: "sender",
+            type: "ice",
+            payload: event.candidate.toJSON(),
+          } satisfies SignalEvent<RTCIceCandidateInit>);
         };
 
-        createdPc.onconnectionstatechange = () => {
-          const state = createdPc.connectionState;
+        currentPc.onconnectionstatechange = () => {
+          const state = currentPc.connectionState;
+          if (state === "connected") {
+            addListener(peerId);
+          }
           if (state === "failed" || state === "disconnected" || state === "closed") {
             closePeer(peerId);
-            setActiveListeners((prev) => prev.filter((id) => id !== peerId));
           }
         };
       }
 
-      const activePc = pc;
-      if (!activePc) return;
+      if (!pc) return;
 
-      const offer = await activePc.createOffer({ offerToReceiveAudio: false, offerToReceiveVideo: false });
+      const offer = await pc.createOffer({ offerToReceiveAudio: false, offerToReceiveVideo: false });
       offer.sdp = forceLowLatencyOpus(offer.sdp ?? "");
-      await activePc.setLocalDescription(offer);
+      await pc.setLocalDescription(offer);
+      if (!pc.localDescription) {
+        throw new Error("Sender offer could not be created.");
+      }
 
-      socket.emit(SIGNALING_EVENTS.offer, {
+      socket.emit(SIGNALING_EVENTS.signal, {
         room: roomRef.current,
         to: peerId,
-        offer: activePc.localDescription,
-      });
+        role: "sender",
+        type: "offer",
+        payload: pc.localDescription,
+      } satisfies SignalEvent<RTCSessionDescriptionInit>);
     },
-    [closePeer, socket, tuneSender]
+    [addListener, closePeer, socket, tuneSender]
   );
 
-  useEffect(() => {
-    let cancelled = false;
+  const ensureSignalingReady = useCallback(async () => {
+    setSignalingState((prev) => (prev === "reconnecting" ? prev : "connecting"));
+    setConnectionError("");
+    await waitForSocketConnection(socket);
+    setSignalingState("connected");
+    joinRoom();
+  }, [joinRoom, socket]);
 
-    const loadReachableOrigin = async () => {
-      try {
-        const res = await fetch("/api/host-info", { cache: "no-store" });
-        if (!res.ok) return;
-        const data = (await res.json()) as { origin?: string };
-        if (!cancelled && data.origin) {
-          setReceiverOrigin(data.origin);
-        }
-      } catch {
-        // Keep current origin fallback.
-      }
-    };
-
-    loadReachableOrigin().catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const handleRetryConnection = useCallback(() => {
+    setConnectionError("");
+    setSignalingState("connecting");
+    setStatus("Connecting to signaling server...");
+    socket.connect();
+  }, [socket]);
 
   useEffect(() => {
-    if (!roomId) return;
-
     const handleConnect = () => {
-      emitJoinRoom();
+      setReconnectCount(0);
+      setSignalingState("connected");
+      setConnectionError("");
+      joinRoom();
+      setStatus(
+        isBroadcasting
+          ? "Broadcasting. Keep this tab active for best stability."
+          : "Connected to signaling. Start broadcast when ready."
+      );
     };
 
-    const handleDisconnect = () => {
+    const handleConnectError = (err: Error) => {
+      setSignalingState("failed");
+      setConnectionError(err.message || "Unable to reach signaling server.");
+      setStatus("Connection failed. Check the signaling server and retry.");
+    };
+
+    const handleDisconnect = (reason: string) => {
       setHasJoinedRoom(false);
-      setActiveListeners([]);
+      setSignalingState(reason === "io client disconnect" ? "idle" : "disconnected");
+      setStatus("Signaling disconnected. Waiting for reconnect or manual retry.");
     };
 
-    const handlePeers = (peers: PeerInfo[]) => {
-      setHasJoinedRoom(true);
-      peerRolesRef.current.clear();
-      const listeners = peers.filter((peer) => peer.role === "listener");
+    const handleReconnectAttempt = (attempt: number) => {
+      setReconnectCount(attempt);
+      setSignalingState("reconnecting");
+      setStatus(`Reconnecting to signaling server... attempt ${attempt}`);
+    };
 
-      for (const peer of peers) {
-        peerRolesRef.current.set(peer.id, peer.role);
-      }
-
-      setActiveListeners(listeners.map((peer) => peer.id));
+    const handleUserJoined = (peer: UserJoinedEvent) => {
+      if (!peer.id || peer.id === socket.id || peer.role === "sender") return;
+      addListener(peer.id);
       if (streamRef.current) {
-        for (const listener of listeners) {
-          createOfferForPeer(listener.id).catch((err) => {
-            setErrorText(String(err?.message || err));
-            setErrorOpen(true);
-          });
-        }
-      }
-    };
-
-    const handlePeerJoined = (peer: PeerInfo) => {
-      peerRolesRef.current.set(peer.id, peer.role);
-      if (peer.role === "listener") {
-        setActiveListeners((prev) => (prev.includes(peer.id) ? prev : [...prev, peer.id]));
-        if (streamRef.current) {
-          createOfferForPeer(peer.id).catch((err) => {
-            setErrorText(String(err?.message || err));
-            setErrorOpen(true);
-          });
-        }
-      }
-    };
-
-    const handleListenerReady = ({ id }: { id: string }) => {
-      if (!id) return;
-      peerRolesRef.current.set(id, "listener");
-      setActiveListeners((prev) => (prev.includes(id) ? prev : [...prev, id]));
-      if (streamRef.current) {
-        createOfferForPeer(id).catch((err) => {
-          setErrorText(String(err?.message || err));
+        createOfferForPeer(peer.id).catch((err) => {
+          setErrorText(String((err as Error)?.message || err));
           setErrorOpen(true);
         });
       }
     };
 
-    const handlePeerLeft = ({ id }: { id: string }) => {
-      peerRolesRef.current.delete(id);
-      setActiveListeners((prev) => prev.filter((peerId) => peerId !== id));
-      closePeer(id);
-    };
+    const handleSignal = (event: SignalEvent) => {
+      const peerId = event.from;
+      if (!peerId || !event.payload) return;
 
-    const handleAnswer = async ({ from, answer }: AnswerEvent) => {
-      const pc = peerConnectionsRef.current.get(from);
-      if (!pc || !answer) return;
-      await pc.setRemoteDescription(answer);
+      if (event.type === "answer") {
+        const pc = peerConnectionsRef.current.get(peerId);
+        if (!pc) return;
 
-      const pending = pendingRemoteCandidatesRef.current.get(from) ?? [];
-      for (const candidate of pending) {
-        await pc.addIceCandidate(candidate);
+        pc.setRemoteDescription(event.payload as RTCSessionDescriptionInit)
+          .then(async () => {
+            const pending = pendingRemoteCandidatesRef.current.get(peerId) ?? [];
+            for (const candidate of pending) {
+              await pc.addIceCandidate(candidate);
+            }
+            pendingRemoteCandidatesRef.current.set(peerId, []);
+          })
+          .catch((err) => {
+            setErrorText(String((err as Error)?.message || err));
+            setErrorOpen(true);
+          });
       }
-      pendingRemoteCandidatesRef.current.set(from, []);
-    };
 
-    const handleIce = async ({ from, candidate }: IceEvent) => {
-      const pc = peerConnectionsRef.current.get(from);
-      if (!pc || !candidate) return;
-      if (pc.remoteDescription) {
-        await pc.addIceCandidate(candidate);
-      } else {
-        const pending = pendingRemoteCandidatesRef.current.get(from) ?? [];
+      if (event.type === "ice") {
+        const pc = peerConnectionsRef.current.get(peerId);
+        if (!pc) return;
+
+        const candidate = event.payload as RTCIceCandidateInit;
+        if (pc.remoteDescription) {
+          pc.addIceCandidate(candidate).catch((err) => {
+            setErrorText(String((err as Error)?.message || err));
+            setErrorOpen(true);
+          });
+          return;
+        }
+
+        const pending = pendingRemoteCandidatesRef.current.get(peerId) ?? [];
         pending.push(candidate);
-        pendingRemoteCandidatesRef.current.set(from, pending);
+        pendingRemoteCandidatesRef.current.set(peerId, pending);
       }
     };
 
     socket.on("connect", handleConnect);
+    socket.on("connect_error", handleConnectError);
     socket.on("disconnect", handleDisconnect);
-    socket.on(SIGNALING_EVENTS.peers, handlePeers);
-    socket.on(SIGNALING_EVENTS.peerJoined, handlePeerJoined);
-    socket.on(SIGNALING_EVENTS.peerLeft, handlePeerLeft);
-    socket.on(SIGNALING_EVENTS.listenerReady, handleListenerReady);
-    socket.on(SIGNALING_EVENTS.answer, (payload: AnswerEvent) => {
-      handleAnswer(payload).catch(() => undefined);
-    });
-    socket.on(SIGNALING_EVENTS.ice, (payload: IceEvent) => {
-      handleIce(payload).catch(() => undefined);
-    });
+    socket.on(SIGNALING_EVENTS.userJoined, handleUserJoined);
+    socket.on(SIGNALING_EVENTS.signal, handleSignal);
+    socket.io.on("reconnect_attempt", handleReconnectAttempt);
 
-    if (socket.connected) emitJoinRoom();
+    socket.connect();
 
     return () => {
       socket.off("connect", handleConnect);
+      socket.off("connect_error", handleConnectError);
       socket.off("disconnect", handleDisconnect);
-      socket.off(SIGNALING_EVENTS.peers, handlePeers);
-      socket.off(SIGNALING_EVENTS.peerJoined, handlePeerJoined);
-      socket.off(SIGNALING_EVENTS.peerLeft, handlePeerLeft);
-      socket.off(SIGNALING_EVENTS.listenerReady, handleListenerReady);
-      socket.off(SIGNALING_EVENTS.answer);
-      socket.off(SIGNALING_EVENTS.ice);
+      socket.off(SIGNALING_EVENTS.userJoined, handleUserJoined);
+      socket.off(SIGNALING_EVENTS.signal, handleSignal);
+      socket.io.off("reconnect_attempt", handleReconnectAttempt);
     };
-  }, [closePeer, createOfferForPeer, emitJoinRoom, roomId, socket]);
-
-  useEffect(() => {
-    if (!isBroadcasting || !socket.connected) return;
-    const interval = setInterval(() => {
-      emitJoinRoom();
-    }, 10000);
-    return () => clearInterval(interval);
-  }, [emitJoinRoom, isBroadcasting, socket]);
+  }, [addListener, createOfferForPeer, isBroadcasting, joinRoom, socket]);
 
   useEffect(() => {
     return () => {
@@ -313,10 +309,7 @@ export default function SharePage() {
 
   const handleStart = async () => {
     try {
-      const joined = await ensureSenderJoined(8);
-      if (!joined) {
-        throw new Error("Signaling join failed on sender. Refresh page and retry.");
-      }
+      await ensureSignalingReady();
       const stream = await captureDisplayAudio();
       streamRef.current = stream;
       setIsBroadcasting(true);
@@ -326,13 +319,11 @@ export default function SharePage() {
         track.onended = () => stopBroadcast();
       }
 
-      for (const [peerId, role] of peerRolesRef.current.entries()) {
-        if (role === "listener") {
-          await createOfferForPeer(peerId);
-        }
+      for (const peerId of activeListeners) {
+        await createOfferForPeer(peerId);
       }
     } catch (err) {
-      setErrorText(String((err as Error).message || err));
+      setErrorText(String((err as Error)?.message || err));
       setErrorOpen(true);
       setStatus("Unable to start broadcast.");
     }
@@ -348,17 +339,23 @@ export default function SharePage() {
                 <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">Laptop Sender</p>
                 <h1 className="mt-2 text-4xl font-semibold tracking-tight text-slate-50">Broadcast laptop audio</h1>
                 <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-400">{status}</p>
+                {connectionError ? <p className="mt-2 text-sm text-amber-300">{connectionError}</p> : null}
               </div>
-              <StatusBadge active={isBroadcasting} activeLabel="Live" idleLabel="Idle" />
+              <StatusBadge active={isBroadcasting || signalingState === "connected"} activeLabel="Live" idleLabel="Idle" />
             </div>
 
             <div className="mt-6 flex flex-wrap gap-3">
-              <Button onClick={handleStart} disabled={isBroadcasting}>
-                Start Broadcast
+              <Button onClick={handleStart} disabled={!roomId || isBroadcasting || signalingState === "connecting"}>
+                {signalingState === "connecting" ? "Connecting..." : "Start Broadcast"}
               </Button>
               <Button variant="secondary" onClick={stopBroadcast} disabled={!isBroadcasting}>
                 Stop
               </Button>
+              {(signalingState === "failed" || signalingState === "disconnected") && (
+                <Button variant="secondary" onClick={handleRetryConnection}>
+                  Retry Connection
+                </Button>
+              )}
               <Link href="/tool">
                 <Button variant="ghost">Back to Tool</Button>
               </Link>
@@ -366,25 +363,25 @@ export default function SharePage() {
           </Card>
 
           <div className="grid gap-4 md:grid-cols-4">
-            <MetricCard
-              label="Session"
-              value={roomId.slice(0, 8)}
-              hint="Active room ID"
-              status="active"
-            />
+            <MetricCard label="Session" value={roomId ? roomId.slice(0, 8) : "--"} hint="Active room ID" status="active" />
             <MetricCard
               label="Signaling"
-              value={hasJoinedRoom ? "Joined" : "Waiting"}
-              hint="Room connection state"
-              status={hasJoinedRoom ? "good" : "default"}
+              value={SIGNALING_LABELS[signalingState]}
+              hint={hasJoinedRoom ? "Joined room on AWS signaling" : "Awaiting room join"}
+              status={signalingState === "connected" ? "good" : signalingState === "failed" ? "default" : "active"}
             />
             <MetricCard
               label="Listeners"
               value={String(activeListeners.length)}
-              hint="Currently attached phones"
+              hint="Phones detected in this room"
               status={activeListeners.length > 0 ? "good" : "default"}
             />
-            <MetricCard label="Latency" value="10ms" hint="Target Opus profile" status="active" />
+            <MetricCard
+              label="Reconnects"
+              value={String(reconnectCount)}
+              hint="Socket recovery attempts"
+              status={reconnectCount > 0 ? "active" : "default"}
+            />
           </div>
 
           <Card className="p-7">
@@ -394,13 +391,13 @@ export default function SharePage() {
                 <h2 className="mt-2 text-2xl font-semibold text-slate-50">Phone listeners</h2>
               </div>
               <span className="rounded-full border border-slate-700 bg-white/[0.03] px-3 py-1 text-xs font-medium text-slate-300">
-                {hasJoinedRoom ? "Room joined" : "Joining room"}
+                {SIGNALING_LABELS[signalingState]}
               </span>
             </div>
 
             <p className="mt-3 text-sm leading-7 text-slate-400">
               {activeListeners.length > 0
-                ? `${activeListeners.length} listener(s) currently connected to this broadcast session.`
+                ? `${activeListeners.length} listener(s) currently detected in this broadcast session.`
                 : "No listeners connected yet. Keep this screen open and scan the QR from your phone."}
             </p>
 
@@ -425,13 +422,16 @@ export default function SharePage() {
         </div>
 
         <div className="grid gap-6">
-          {pairUrl ? <QRCodeCard roomId={roomId} pairUrl={pairUrl} /> : null}
+          {roomId ? <QRCodeCard roomId={roomId} pairUrl={pairUrl} /> : null}
+
           <Card className="p-6">
             <p className="text-xs font-medium uppercase tracking-[0.22em] text-slate-500">Broadcast Notes</p>
             <div className="mt-3 grid gap-3 text-sm leading-7 text-slate-400">
+              <p>
+                Signaling is routed through <code>{signalingHost}</code> over secure WebSocket transport.
+              </p>
               <p>Choose the exact tab with active audio for the most reliable capture.</p>
-              <p>Keep this tab active while broadcasting to reduce browser throttling.</p>
-              <p>For different networks, add TURN before production launch.</p>
+              <p>Keep this tab active while broadcasting to reduce browser throttling and reconnect churn.</p>
             </div>
           </Card>
         </div>

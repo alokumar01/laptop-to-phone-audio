@@ -18,7 +18,7 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Open `http://localhost:3000`.
+Open the development URL shown by Next.js in your terminal.
 
 ## Environment variables
 
@@ -26,7 +26,7 @@ Public app/runtime configuration lives in `.env.local` for local development and
 
 ```bash
 NEXT_PUBLIC_BASE_URL=https://your-domain.com
-NEXT_PUBLIC_SIGNALING_URL=https://signal.your-domain.com
+NEXT_PUBLIC_SIGNALING_URL=https://signal.whoisalok.tech
 NEXT_PUBLIC_GOOGLE_ANALYTICS_ID=G-XXXXXXXXXX
 NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION=
 NEXT_PUBLIC_ADSENSE_CLIENT=ca-pub-XXXXXXXXXXXXXXXX
@@ -35,15 +35,6 @@ NEXT_PUBLIC_STUN_URL=stun:stun.l.google.com:19302
 NEXT_PUBLIC_TURN_URL=
 NEXT_PUBLIC_TURN_USERNAME=
 NEXT_PUBLIC_TURN_CREDENTIAL=
-```
-
-Server runtime variables for the standalone signaling server:
-
-```bash
-HOST=0.0.0.0
-PORT=3000
-ALLOWED_DEV_ORIGINS=
-ALLOWED_SIGNALING_ORIGINS=https://your-domain.com
 ```
 
 ## CI
@@ -59,27 +50,13 @@ GitHub Actions runs the same checks on pushes to `main` and `dev`, plus pull req
 
 ## Deployment architecture
 
-This repository contains two concerns:
-
-1. The Next.js web app
-2. A Socket.IO signaling server in `server.js`
-
-Important: Vercel can host the Next.js app, but it is not the right runtime for the long-lived Socket.IO server in `server.js`.
-
 Recommended production setup:
 
 1. Deploy the Next.js app to Vercel
-2. Deploy the signaling server to a Node host such as Railway, Render, Fly.io, or a VPS
+2. Keep the signaling server on AWS EC2 at `https://signal.whoisalok.tech`
 3. Set `NEXT_PUBLIC_SIGNALING_URL` in Vercel to the signaling server origin
-4. Set `ALLOWED_SIGNALING_ORIGINS` on the signaling server to the public app origin
+4. Set `NEXT_PUBLIC_BASE_URL` in Vercel to the public app origin
 5. Add TURN credentials with the public TURN env vars for cross-network reliability
-
-For same-origin self-hosting on a VPS, you can still run:
-
-```bash
-npm run build
-npm run start
-```
 
 ## SEO and ads
 
@@ -98,7 +75,7 @@ AdSense components render only when enabled through environment variables and ar
 
 - LAN works with STUN-only in favorable conditions
 - Cross-network use should add TURN
-- Browser screen capture requires localhost during local development or HTTPS in production
+- Browser screen capture requires a secure context in production
 
 ## Author
 

@@ -3,13 +3,10 @@ import { publicEnv } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request) {
-  const requestUrl = new URL(request.url);
-
+export async function GET() {
   return NextResponse.json(
     {
-      origin: requestUrl.origin || publicEnv.baseUrl,
-      port: requestUrl.port || undefined,
+      origin: publicEnv.baseUrl,
     },
     {
       headers: {
